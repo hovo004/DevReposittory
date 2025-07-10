@@ -7,8 +7,13 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <sys/mman.h>
+#include <fcntl.h>
+
 #define MAX_ARGUMENTS 10
-#define MAX_VARS 3
+#define MAX_VARS 15
+#define MAX_HISTORY_LINE 500
+#define BUF_SIZE 1024
+#define SMALL_BUF_SIZE 64
 
 
 void generate_pront();
@@ -28,6 +33,9 @@ char** create();
 void destroy(char**);
 bool find_name(char** names, char* command, size_t size, int* name_index);
 void handle_echo(char** names, char** values, char** commands);
+void handle_help(char** commands);
+void handle_history(char** commands, FILE*);
+int line_count(FILE*);
 
 enum CommandType
 {
@@ -52,8 +60,12 @@ int name_index = 0;
 
 int main()
 {
-	char** names = create();
-	char** values = create();
+	char** names = create();          //   create array for keys
+	char** values = create();		  //   create array for values
+	FILE* history = fopen("history.txt", "a+");
+	if(history == NULL)
+		errExit("fopen()");
+	int line = line_count(history);
 
 	while(1)					 
 	{
@@ -61,6 +73,8 @@ int main()
 
 		char pront_input[100];
 		Fgets(pront_input, sizeof(pront_input), stdin);
+
+		fprintf(history, "%d %s\n", line++ + 1, pront_input);   //create history
 
 		char* tokens[MAX_ARGUMENTS];
 		int token_count = tokenizing(pront_input, tokens);
@@ -90,6 +104,10 @@ int main()
 								
 						break;
 					case CMD_EXIT:
+						printf("\n");
+						printf("     This small Shell created by Hovhannes Hovhannisyan\n");
+						printf("     08.07.2025\n");
+						printf("\n");
 						return 0;
 
 					case CMD_SET:
@@ -108,16 +126,16 @@ int main()
 							memset(values[name_index], 0, 64);
 						}else
 							printf("%s: Invalid variable\n", new_name);
-							// for(int i = 0; i < MAX_VARS; i++)
-							// 		printf("%s -->  %s\n", names[i], values[i]);
 						break;
 					case CMD_ECHO:
 
 						handle_echo(names, values, tokens);
 						break;
 					case CMD_HELP:
+						handle_help(tokens);	
 						break;
 					case CMD_HISTORY:
+						handle_history(tokens, history);
 						break;
 				}
 				break;
@@ -132,7 +150,7 @@ int main()
 		}
 	}
 
-	
+	fclose(history);
 	destroy(names);
 	destroy(values);
 }
@@ -225,7 +243,7 @@ void errExit(const char* msg)
 	exit(EXIT_FAILURE);
 }
 
-char* Fgets(char* buf, size_t size, FILE* stream)
+char* Fgets(char* buf, size_t size, FILE* stream)  //fgets removed \n
 {
 	char *res = fgets(buf, size, stream);
 	if(res != NULL && strlen(buf) > 0)
@@ -289,8 +307,6 @@ char* handle_pwd()
 
 void handle_cd(char* pront, char** command)
 {
-	char cur_dir[100];
-
 	if(command[1] != NULL)
 	{
 		if(chdir(command[1]) != 0)
@@ -322,6 +338,7 @@ void handle_set(char** names, char** values, char** tokens)
 	char* new_value = get_value_set(tokens);
 	if(new_value == NULL)
 	{
+		free(new_name);
 		return;
 	}
 
@@ -349,23 +366,21 @@ void handle_set(char** names, char** values, char** tokens)
 		}
 		
 	}
-		    // for(int i = 0; i < MAX_VARS; i++)
-		 	// printf("%s -->  %s\n", names[i], values[i]);
 	free(new_name);
 	free(new_value);
 	
 }
 
-char* get_name_set(char** commands)
+char* get_name_set(char** commands)     //give token for name 
 {
 	if(strchr(commands[1], '='))
 	{
-		char* key = (char*)calloc(64, sizeof(char));
+		char* key = (char*)calloc(SMALL_BUF_SIZE, sizeof(char));
 		if(key == NULL)
 		errExit("calloc(key)");
 
-		char value[64] = "";
-		char input[128] = "";
+		char value[SMALL_BUF_SIZE] = "";
+		char input[BUF_SIZE] = "";
 		char* p = input;
 
 		for(int i = 1; commands[i] != NULL; i++)
@@ -406,16 +421,16 @@ char* get_name_set(char** commands)
 
 }
 
-char* get_value_set(char** commands)
+char* get_value_set(char** commands)     //  give token for value
 {
 	if(strchr(commands[1], '='))
 	{
-		char* value = (char*)calloc(64, sizeof(char));
+		char* value = (char*)calloc(SMALL_BUF_SIZE, sizeof(char));
 		if(value == NULL)
 		errExit("calloc(key)");
 
-		char key[64] = "";
-		char input[128] = "";
+		char key[SMALL_BUF_SIZE] = "";
+		char input[BUF_SIZE] = "";
 		char* p = input;
 
 		for(int i = 1; commands[i] != NULL; i++)
@@ -455,7 +470,7 @@ char* get_value_set(char** commands)
 	}
 }
 
-char** create()
+char** create(void)                          //create array (char[])
 {
 	char** mat = (char**)calloc(MAX_VARS, sizeof(char*));
 	if(mat == NULL)
@@ -463,12 +478,12 @@ char** create()
 
 	for(int i = 0; i < MAX_VARS; i++)
 	{
-		 mat[i] = (char*)calloc(64, sizeof(char)); // 64 for key or value
+		 mat[i] = (char*)calloc(SMALL_BUF_SIZE, sizeof(char));
 	}
 	return mat; 
 }
 
-void destroy(char** mat)
+void destroy(char** mat)                //destroy created arrays
 {
 	for(int i = 0; i < MAX_VARS; i++)
 	{
@@ -477,7 +492,7 @@ void destroy(char** mat)
 	free(mat);
 }
 
-bool find_name(char** names, char* command, size_t size, int* name_index)
+bool find_name(char** names, char* command, size_t size, int* name_index)  //whether a variable with this name exists or not
 {
 	for(int i = 0; i < size; i++)
 	{
@@ -492,7 +507,7 @@ bool find_name(char** names, char* command, size_t size, int* name_index)
 
 void handle_echo(char** names, char** values, char** commands)
 {
-	char input[128] = "";
+	char input[BUF_SIZE] = "";
 
 	for(int i = 1; commands[i] != NULL; i++)
 	{
@@ -506,26 +521,6 @@ void handle_echo(char** names, char** values, char** commands)
 			}
 			else
 			{
-				// bool inserted = false;
-
-				// for(int j = 0; j < MAX_VARS; j++)
-				// {
-				// 	if(names[j][0] == '\0')
-				// 	{
-				// 		strcpy(names[j], temp);
-				// 		strcat(input, " ");
-				// 		inserted = true;
-
-				// 		break;
-				// 	}
-				// }
-
-				// if(!inserted)
-				// {
-				// 	printf("Variable limits reached (Max limits is %d)\n", MAX_VARS);
-				// 	return;
-				// }
-
 				strcat(input, "");
 			}
 		}else
@@ -535,4 +530,132 @@ void handle_echo(char** names, char** values, char** commands)
 		}
 	}
 	printf("%s\n", input);
+}
+
+void handle_help(char** commands)
+{
+	if(commands[1] == NULL)
+	{	printf("\n");
+		printf("     mysh: supported built-in commands:\n");
+        printf("       cd [dir]        Change the current directory to [dir]. If no dir, goes to HOME.\n");
+        printf("       pwd             Print the current working directory.\n");
+        printf("       exit            Exit the shell.\n");
+        printf("       set VAR=VALUE   Set a variable VAR to VALUE.\n");
+        printf("       unset VAR       Unset a variable VAR.\n");
+        printf("       echo [args]     Print arguments, substituting $VAR with its value.\n");
+        printf("       help [command]  Display help for a specific command.\n");
+        printf("       history [N]     Display command history.\n");
+		printf("\n");
+	}else
+	{
+		if(is_builtin(commands[1]))
+		{
+			switch(get_builtin_type(commands[1]))
+			{
+				case CMD_PWD:
+					printf("\n");
+					printf("     pwd: Print the name of current working directory.\n");
+					printf("\n");
+					break;
+				case CMD_CD:
+					printf("\n");
+					printf("     cd: cd [dir]\n");
+					printf("         change the shell working directory\n");
+					printf("\n");
+					break;
+				case CMD_EXIT:
+					printf("\n");
+					printf("     exit: Exit the shell.\n");
+					printf("\n");
+					break;
+				case CMD_SET:
+					printf("\n");
+					printf("     set: set [VAR]=[VALUE]\n");
+					printf("          Create variable\n");
+					printf("\n");
+					break;
+				case CMD_UNSET:
+					printf("\n");
+					printf("     unset: unset [VAR]\n");
+					printf("            Delete variable\n");
+					printf("\n");
+					break;
+				case CMD_ECHO:
+					printf("\n");
+					printf("     echo: echo [arg ...]\n");
+					printf("           Write arguments to the standard output.\n");
+					printf("\n");
+					break;
+				case CMD_HELP:
+					printf("\n");
+					printf("     help: help [-dms] [pattern ...]\n");
+					printf("           Display information about builtin commands.\n");
+					printf("\n");
+					break;
+				case CMD_HISTORY:
+					printf("\n");
+					printf("     history: history [N]\n");
+					printf("              Print the history list.\n");
+					printf("\n");
+					break;
+
+			}
+		}else
+			printf("Invalid argument for --help\n");
+	}
+	return;
+}
+
+void handle_history(char** commands, FILE* file)
+{
+	fseek(file, 0, SEEK_SET);
+	char line[BUF_SIZE] = "";
+	int count_line = line_count(file);
+
+	if(commands[1] == NULL)
+	{
+		while(fgets(line, sizeof(line), file) != NULL)
+		{
+			printf("%s", line);
+		}
+		return;
+	}
+
+	int num = atoi(commands[1]);   // string --> integer;
+	
+	if(num < 0 || num > MAX_HISTORY_LINE)
+	{
+		printf("Invalid argument for history (MAX lines: %d)\n", MAX_HISTORY_LINE);
+		return;
+	}
+
+	int skip = count_line - num;
+
+	for(int i = 0; i < skip; i++)          //skip first lines
+	{
+		fgets(line, sizeof(line), file);
+	}
+
+	for(int i = 0; i < num; ++i)    //print N lines (history N)
+	{
+		fgets(line, sizeof(line), file);
+		printf("%s", line);
+	}
+	return;
+}
+
+int line_count(FILE* file)
+{
+	int lines = 0; 
+	char ch;
+
+	while((ch = fgetc(file)) != EOF)
+	{
+		if(ch == '\n')
+			lines++;
+	}
+
+	fseek(file, 0, SEEK_SET);
+
+	return lines;
 }
