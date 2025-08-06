@@ -15,7 +15,7 @@
 #define BUF_SIZE 1024
 #define SMALL_BUF_SIZE 64
 
-
+void handler_SIGINT (int);
 void generate_pront();
 char* Fgets(char* buf, size_t size, FILE* stream);
 int tokenizing(char* pront_input, char** tokens);
@@ -44,7 +44,7 @@ enum CommandType
 	CMD_NOT_FOUND
 }type;
 
-enum BuiltinType 
+enum BuiltinType
 {
 	CMD_PWD,
 	CMD_CD,
@@ -57,6 +57,7 @@ enum BuiltinType
 } builtin_type;
 
 int name_index = 0;
+int flag = false;
 
 int main()
 {
@@ -67,7 +68,7 @@ int main()
 		errExit("fopen()");
 	int line = line_count(history);
 
-	while(1)					 
+	while(1)
 	{
 		generate_pront();
 
@@ -89,11 +90,11 @@ int main()
 				switch(builtin_type)
 				{
 					case CMD_PWD:
-						char *cur_dir = handle_pwd();   
+						char *cur_dir = handle_pwd();
 						if(cur_dir == NULL)
 						{
 							perror("pwd");
-						}    
+						}
 
 						printf("%s\n", cur_dir);
 						free(cur_dir);
@@ -101,7 +102,7 @@ int main()
 					case CMD_CD:
 
 						handle_cd(pront_input, tokens);
-								
+
 						break;
 					case CMD_EXIT:
 						printf("\n");
@@ -118,7 +119,7 @@ int main()
 					case CMD_UNSET:
 							char* new_name = tokens[1];
 							char* new_value = tokens[1];
-						
+
 
 						if(find_name(names, new_name, MAX_VARS, &name_index))
 						{
@@ -132,7 +133,7 @@ int main()
 						handle_echo(names, values, tokens);
 						break;
 					case CMD_HELP:
-						handle_help(tokens);	
+						handle_help(tokens);
 						break;
 					case CMD_HISTORY:
 						handle_history(tokens, history);
@@ -148,6 +149,13 @@ int main()
 
 				break;
 		}
+
+		if(flag)
+		{	
+			fflush (history);
+			flag = 0;
+			break;
+		}
 	}
 
 	fclose(history);
@@ -155,11 +163,16 @@ int main()
 	destroy(values);
 }
 
+void handler_SIGINT (int signum)
+{
+	flag = true;
+}
+
 void generate_pront()
 {
 	char cwd[256];
 	char* home = getenv("HOME");
-	
+
 	if(getcwd(cwd, sizeof(cwd)) == NULL)
 	{
 		perror("getcwd");
@@ -203,7 +216,7 @@ int tokenizing(char* pront_input, char** tokens)
 bool is_builtin(const char* command)
 {
 	const char* builtin_commands[] = {"pwd", "cd", "exit", "set", "unset", "echo", "help", "history", NULL};
-	
+
 	for(int i = 0; builtin_commands[i] != NULL; i++)
 	{
 		if(strcmp(command, builtin_commands[i]) == 0)
@@ -224,7 +237,7 @@ bool is_external(char* command, char** args)
 			if(execvp(command, args) == -1)
 			{
 				_exit(1);
-			}	
+			}
 		}else
 		{
 			int status;
@@ -234,7 +247,7 @@ bool is_external(char* command, char** args)
 				return true;
 			else
 				return false;
-		}		
+		}
 }
 
 void errExit(const char* msg)
@@ -347,11 +360,11 @@ void handle_set(char** names, char** values, char** tokens)
 		strcpy(values[name_index], new_value);
 	}else
 	{
-		
+
 		bool inserted = false;
-		
+
 		for(int i = 0; i < MAX_VARS; i++)
-		{	
+		{
 			if(names[i][0] == '\0')
 			{
 				strcpy(names[i], new_name);
@@ -364,14 +377,14 @@ void handle_set(char** names, char** values, char** tokens)
 		{
 			printf("Variable limits reached (Max limits is %d)\n", MAX_VARS);
 		}
-		
+
 	}
 	free(new_name);
 	free(new_value);
-	
+
 }
 
-char* get_name_set(char** commands)     //give token for name 
+char* get_name_set(char** commands)     //give token for name
 {
 	if(strchr(commands[1], '='))
 	{
@@ -408,11 +421,11 @@ char* get_name_set(char** commands)     //give token for name
 		{
 			if(*p == '"')
 				p++;
-			else	
+			else
 				value[v++] = *p++;
 		}
 		return key;
-		
+
 	}else
 	{
 		printf("Invalid format, use VAR=VALUE\n");
@@ -450,7 +463,7 @@ char* get_value_set(char** commands)     //  give token for value
 		{
 			printf("Invalid format, use VAR=VALUE\n");
 			return NULL;
-	}		
+	}
 		p++;
 
 		int v = 0;
@@ -458,11 +471,11 @@ char* get_value_set(char** commands)     //  give token for value
 		{
 			if(*p == '"')
 				p++;
-			else	
+			else
 				value[v++] = *p++;
 		}
 		return value;
-		
+
 	}else
 	{
 		printf("Invalid format, use VAR=VALUE\n");
@@ -480,7 +493,7 @@ char** create(void)                          //create array (char[])
 	{
 		 mat[i] = (char*)calloc(SMALL_BUF_SIZE, sizeof(char));
 	}
-	return mat; 
+	return mat;
 }
 
 void destroy(char** mat)                //destroy created arrays
@@ -622,7 +635,7 @@ void handle_history(char** commands, FILE* file)
 	}
 
 	int num = atoi(commands[1]);   // string --> integer;
-	
+
 	if(num < 0 || num > MAX_HISTORY_LINE)
 	{
 		printf("Invalid argument for history (MAX lines: %d)\n", MAX_HISTORY_LINE);
@@ -646,7 +659,7 @@ void handle_history(char** commands, FILE* file)
 
 int line_count(FILE* file)
 {
-	int lines = 0; 
+	int lines = 0;
 	char ch;
 
 	while((ch = fgetc(file)) != EOF)
