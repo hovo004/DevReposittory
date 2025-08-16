@@ -1,5 +1,3 @@
-Based on the C code you've provided, here is a README that describes the project, how to use it, and its features.
-
 mysh: A Simple Shell
 mysh is a custom-built, simple command-line shell written in C. It provides a basic interactive environment for executing commands, managing environment variables, and viewing command history.
 
